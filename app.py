@@ -2,13 +2,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
+from pathlib import Path
 
 st.set_page_config(page_title="JFA Underwriting Cockpit", layout="wide")
 
+BASE_DIR = Path(__file__).resolve().parent
+
 @st.cache_resource
 def load_engine():
-    model = joblib.load("model.joblib")
-    data = np.load("test_eval.npz", allow_pickle=True)
+    model = joblib.load(BASE_DIR / "model.joblib")
+    data = np.load(BASE_DIR / "test_eval.npz", allow_pickle=True)
     y_probs = data["y_probs"]
     y_test = data["y_test"]
     feature_names = list(data["feature_names"])
