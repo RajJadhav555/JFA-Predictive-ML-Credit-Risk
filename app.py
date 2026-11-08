@@ -1,29 +1,20 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import joblib
 
 st.set_page_config(page_title="JFA Underwriting Cockpit", layout="wide")
-from lightgbm import LGBMClassifier
-from sklearn.model_selection import train_test_split
 
 @st.cache_resource
-
 def load_engine():
-        df = pd.read_csv("data/credit_data_engineered.csv", index_col=0)
+    model = joblib.load("model.joblib")
+    data = np.load("test_eval.npz", allow_pickle=True)
+    y_probs = data["y_probs"]
+    y_test = data["y_test"]
+    feature_names = list(data["feature_names"])
+    return model, feature_names, y_probs, y_test
 
-        X = df.drop(columns=["SeriousDlqin2yrs"])
-        y = df["SeriousDlqin2yrs"]
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.20, random_state=42, stratify=y
-        )
-        model = LGBMClassifier(
-            n_estimators=100, learning_rate=0.05, random_state=42, n_jobs=-1, verbose=-1
-        )
-        model.fit(X_train, y_train)
-        y_probs = model.predict_proba(X_test)[:, 1]
-        return model, X, y_probs, y_test
-
-model, X, y_probs, y_test = load_engine()
+model, feature_names, y_probs, y_test = load_engine()
 
 st.title("🏛️ JFA Credit Risk & Predictive Underwriting Cockpit")
 st.markdown("### Executive Strategy: Portfolio Threshold Optimization")
@@ -75,7 +66,7 @@ with st.form("underwrite_form"):
             open_lines, late_90_days, real_estate_loans, past_due_60_89,
             dependents, 0, total_late, per_capita, has_late
         ]
-        applicant_df = pd.DataFrame([applicant_row], columns=X.columns)
+        applicant_df = pd.DataFrame([applicant_row], columns=feature_names)
         prob = model.predict_proba(applicant_df)[0, 1]
         st.markdown("---")
         if prob < threshold:
