@@ -60,23 +60,67 @@ with st.form("underwrite_form"):
             late_90_days = st.number_input("90+ Days Delinquency Count", min_value=0, max_value=20, value=0)
 
             submitted = st.form_submit_button("🔍 Run Underwriting Assessment")
-    if submitted:
-        total_late = past_due_30_59 + past_due_60_89 + late_90_days
-        has_late = 1 if total_late > 0 else 0
-        per_capita = monthly_income / (dependents + 1)
-        applicant_row = [
-            utilization, age, past_due_30_59, debt_ratio, monthly_income,
-            open_lines, late_90_days, real_estate_loans, past_due_60_89,
-            dependents, 0, total_late, per_capita, has_late
-        ]
-        applicant_df = pd.DataFrame([applicant_row], columns=feature_names)
-        prob = model.predict_proba(applicant_df)[0, 1]
-        st.markdown("---")
-        if prob < threshold:
-            st.success(
-                f"🟢 **APPROVED** — Default Risk: **{prob*100:.2f}%** (Tolerance: {threshold*100:.1f}%)"
-            )
-        else:
-            st.error(
-                f"🔴 **DECLINED** — Default Risk: **{prob*100:.2f}%** (Tolerance: {threshold*100:.1f}%)"
-            )
+if submitted:
+            total_late = past_due_30_59 + past_due_60_89 + late_90_days
+            has_late = 1 if total_late > 0 else 0
+            per_capita = monthly_income / (dependents + 1)
+            applicant_row = [
+                utilization, age, past_due_30_59, debt_ratio, monthly_income,
+                open_lines, late_90_days, real_estate_loans, past_due_60_89,
+                dependents, 0, total_late, per_capita, has_late
+            ]
+            applicant_df = pd.DataFrame([applicant_row], columns=feature_names)
+            prob = model.predict_proba(applicant_df)[0, 1]
+            st.markdown("---")
+            if prob < threshold:
+                st.success(
+                    f"🟢 **APPROVED** — Default Risk: **{prob*100:.2f}%** (Tolerance: {threshold*100:.1f}%)"
+                )
+            else:
+                st.error(
+                    f"🔴 **DECLINED** — Default Risk: **{prob*100:.2f}%** (Tolerance: {threshold*100:.1f}%)"
+                )
+
+            # TreeSHAP Local Model Explainability (CCCFA / RBNZ Compliance)
+            contribs = model.booster_.predict(applicant_df, pred_contrib=True)[0][:-1]
+            feature_labels = {
+                "TotalLateEvents": "Total Delinquencies (30/60/90 Days)",
+                "RevolvingUtilizationOfUnsecuredLines": "Credit Card / Line Utilization",
+                "NumberOfTimes90DaysLate": "Severe 90+ Days Delinquency",
+                "NumberOfTime30-59DaysPastDueNotWorse": "30-59 Days Past Due History",
+                "NumberOfTime60-89DaysPastDueNotWorse": "60-89 Days Past Due History",
+                "DebtRatio": "Debt-to-Income Ratio (Leverage)",
+                "MonthlyIncome": "Monthly Income ($)",
+                "PerCapitaIncome": "Household Per-Capita Cushion",
+                "age": "Applicant Age",
+                "NumberOfOpenCreditLinesAndLoans": "Open Credit Lines & Loans",
+                "NumberRealEstateLoansOrLines": "Real Estate / Mortgage Accounts",
+                "NumberOfDependents": "Household Dependents Burden",
+                "HasLatePayment": "Historical Late Payment Flag",
+                "MonthlyIncome_Missing": "Unrecorded Income Flag"
+            }
+            expl_df = pd.DataFrame({
+                "Metric": [feature_labels.get(f, f) for f in feature_names],
+                "Impact": contribs
+            })
+            risk_drivers = expl_df[expl_df["Impact"] > 0].sort_values("Impact", ascending=False)
+            strengths = expl_df[expl_df["Impact"] < 0].sort_values("Impact", ascending=True)
+
+            st.markdown("### 🔍 Model Explainability & Adverse Action Audit")
+            x_col1, x_col2 = st.columns(2)
+
+            with x_col1:
+                st.subheader("⚠️ Top Risk Escalators (Pushing Risk Up)")
+                if not risk_drivers.empty:
+                    for _, r in risk_drivers.head(3).iterrows():
+                        st.warning(f"**{r['Metric']}**: +{r['Impact']:.3f} risk impact")
+                else:
+                    st.info("No elevated risk drivers detected.")
+
+            with x_col2:
+                st.subheader("🛡️ Top Credit Strengths (Pulling Risk Down)")
+                if not strengths.empty:
+                    for _, r in strengths.head(3).iterrows():
+                        st.success(f"**{r['Metric']}**: {r['Impact']:.3f} protective cushion")
+                else:
+                    st.info("No significant risk-mitigating factors.")
